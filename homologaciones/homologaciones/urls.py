@@ -4,6 +4,5 @@ from .views import inicio
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', inicio, name="inicio"),
-    path('materias/', include('apps.materias.urls')),
+    path('', include('apps.homologador.urls')),
 ]
