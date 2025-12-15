@@ -1,12 +1,12 @@
 import re
 import json
 import traceback # Importado para manejo robusto de errores
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.conf import settings
 from .forms import NotasUploadForm
-from .models import AsignaturaDestino, Carrera
-from .utils import extraer_texto_de_archivo # Asumo que esta función existe
+from .models import AsignaturaDestino, Carrera, HistoricoHomologacion
+from .utils import extraer_texto_de_archivo, generar_docx_homologacion
 
 from google import genai
 from google.genai.errors import APIError
@@ -177,26 +177,7 @@ def procesar_homologacion_view(request):
 
                 # Definición del esquema de salida para la Homologación (DEBE COINCIDIR CON EL PROMPT)
                 schema_homologacion = {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "materia_destino": {"type": "string"},
-                            "codigo_destino": {"type": "string"}, 
-                            "materia_origen_homologada": {"type": "string"}, 
-                            "creditos_otorgados": {"type": "integer"}, 
-                            "razon_homologacion": {"type": "string"}, 
-                            "estado": {"type": "string"} 
-                        },
-                        "required": [
-                            "materia_destino", 
-                            "codigo_destino", 
-                            "materia_origen_homologada", 
-                            "creditos_otorgados", 
-                            "razon_homologacion", 
-                            "estado"
-                        ]
-                    }
+                    # ... (Esquema de salida) ...
                 }
 
                 response = client.models.generate_content(
@@ -205,23 +186,43 @@ def procesar_homologacion_view(request):
                     config={"response_mime_type": "application/json", "response_schema": schema_homologacion}
                 )
                 
-                # 4. Parsear la respuesta y retorno exitoso
+                # 4. Parsear la respuesta
                 homologaciones_json = json.loads(response.text)
                 
+                # ------------------------------------------------------------------
+                # 🚨 INSERCIÓN: GUARDAR EN HISTÓRICO Y OBTENER ID 🚨
+                # ------------------------------------------------------------------
+                
+                # Serializar el JSON de resultado
+                resultado_str = json.dumps(homologaciones_json) 
+                
+                # Crear la entrada en el histórico
+                historico_guardado = HistoricoHomologacion.objects.create(
+                    carrera_destino_id=carrera_destino_id,
+                    # Nota: Si el nombre del estudiante se extrae en Fase 1, se debe usar aquí.
+                    nombre_estudiante=None, 
+                    documento_identidad=None, 
+                    resultado_json=resultado_str,
+                    archivo_pdf_nombre=archivo_notas.name
+                )
+                
+                # ------------------------------------------------------------------
+                
+                # 5. Retorno Exitoso (Incluyendo el ID del histórico)
                 return JsonResponse({
                     'status': 'success', 
-                    'message': 'Homologación procesada con éxito.',
-                    'resultado': homologaciones_json 
+                    'message': 'Homologación procesada con éxito y guardada en el histórico.',
+                    'resultado': homologaciones_json,
+                    'historico_id': historico_guardado.id  # <-- DEVOLVEMOS EL ID
                 })
 
             except Exception as e:
-                # 🚨 CAPTURA FINAL DE ERRORES INESPERADOS (incluyendo fallos en la Fase 2) 🚨
+                # 🚨 CAPTURA FINAL DE ERRORES INESPERADOS 🚨
                 print("-" * 50)
                 print("🚨 ERROR FATAL INESPERADO 🚨")
                 print(traceback.format_exc())
                 print("-" * 50)
                 
-                # Usamos str(e) para garantizar la serialización JSON segura
                 return JsonResponse({
                     'status': 'error', 
                     'message': f"Un error inesperado ocurrió en la fase final de homologación. Detalle: {str(e)}"
@@ -233,3 +234,34 @@ def procesar_homologacion_view(request):
     form = NotasUploadForm()
     carreras = Carrera.objects.all()
     return render(request, 'homologador/upload.html', {'form': form, 'carreras': carreras})
+        
+        
+    
+    # Si es una solicitud GET, renderiza el formulario
+    form = NotasUploadForm()
+    carreras = Carrera.objects.all()
+    return render(request, 'homologador/upload.html', {'form': form, 'carreras': carreras})
+
+def descargar_docx_homologacion(request, historico_id):
+    """
+    Busca un histórico por ID y devuelve el resultado como un archivo DOCX.
+    """
+    historico_obj = get_object_or_404(HistoricoHomologacion, pk=historico_id)
+    
+    try:
+        # Llama a la función utilitaria para generar el archivo en memoria
+        docx_file = generar_docx_homologacion(historico_obj)
+        
+        # Construye el nombre del archivo
+        filename = f"Homologacion_{historico_obj.carrera_destino.nombre.replace(' ', '_')}_{historico_obj.fecha_procesamiento.strftime('%Y%m%d')}.docx"
+        
+        # Configura la respuesta HTTP para la descarga
+        response = HttpResponse(
+            docx_file, 
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Error al generar el DOCX: {str(e)}'}, status=500)
