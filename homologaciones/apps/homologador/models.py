@@ -26,7 +26,12 @@ class HistoricoHomologacion(models.Model):
                                          help_text="Nombre del estudiante (si se puede extraer).")
     documento_identidad = models.CharField(max_length=50, blank=True, null=True, 
                                            help_text="Cédula o ID del estudiante.")
-    resultado_json = models.TextField(help_text="Resultado completo de la homologación en formato JSON.")    
+    archivo_docx = models.FileField(
+        upload_to='homologaciones_docs/',  # Directorio donde se guardarán los archivos
+        null=True, 
+        blank=True,
+        help_text="Documento DOCX generado de la homologación."
+    )  
     fecha_procesamiento = models.DateTimeField(default=timezone.now)
     archivo_pdf_nombre = models.CharField(max_length=255, blank=True, null=True)
 
