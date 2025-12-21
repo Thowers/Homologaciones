@@ -27,7 +27,7 @@ class HistoricoHomologacion(models.Model):
     documento_identidad = models.CharField(max_length=50, blank=True, null=True, 
                                            help_text="Cédula o ID del estudiante.")
     archivo_docx = models.FileField(
-        upload_to='homologaciones_docs/',  # Directorio donde se guardarán los archivos
+        upload_to='homologaciones_docs/', 
         null=True, 
         blank=True,
         help_text="Documento DOCX generado de la homologación."
@@ -43,9 +43,3 @@ class HistoricoHomologacion(models.Model):
     def __str__(self):
         return f"Homologación de {self.nombre_estudiante or 'Desconocido'} a {self.carrera_destino} - {self.fecha_procesamiento.strftime('%Y-%m-%d')}"
     
-    @property
-    def resultado_parsed(self):
-        try:
-            return json.loads(self.resultado_json)
-        except:
-            return None

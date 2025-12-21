@@ -32,21 +32,18 @@ def extraer_texto_de_archivo(archivo: InMemoryUploadedFile) -> str:
     else:
         return "Tipo de archivo no soportado (solo PDF por ahora)."
     
-def generar_docx_homologacion(historico_obj):
+def generar_docx_homologacion(historico_obj, datos_ia=None):
     """
-    Genera un documento DOCX con el resultado de la homologación.
-    Toma un objeto HistoricoHomologacion.
+    Genera un documento DOCX. 
+    Prioriza 'datos_ia' (pasados directamente) sobre 'historico_obj.resultado_json'.
     """
     document = Document()
 
+    # --- Estilos (Mantener igual) ---
     style_heading = document.styles['Heading 1']
     style_heading.font.name = 'Arial'
     style_heading.font.size = Pt(16)
     style_heading.font.color.rgb = RGBColor(0x00, 0x33, 0x66)
-
-    style_normal = document.styles['Normal']
-    style_normal.font.name = 'Arial'
-    style_normal.font.size = Pt(11)
 
     document.add_heading('Informe de Homologación de Asignaturas', 0)
     
@@ -54,11 +51,11 @@ def generar_docx_homologacion(historico_obj):
     document.add_paragraph(f'Estudiante (ID): {historico_obj.documento_identidad or "N/A"}')
     document.add_paragraph(f'Fecha de Proceso: {historico_obj.fecha_procesamiento.strftime("%d/%m/%Y %H:%M:%S")}')
     document.add_paragraph().add_run().add_break()
-    
-    resultados = historico_obj.resultado_parsed
+
+    resultados = datos_ia if datos_ia is not None else getattr(historico_obj, 'resultado_json', None)
+
     if not resultados:
         document.add_paragraph('No se encontraron resultados válidos para esta homologación.')
-        
         f = io.BytesIO()
         document.save(f)
         f.seek(0)
@@ -79,22 +76,21 @@ def generar_docx_homologacion(historico_obj):
         
         for item in homologadas:
             row_cells = table.add_row().cells
-            row_cells[0].text = f"{item['materia_destino']} ({item['codigo_destino']})"
-            row_cells[1].text = item['materia_origen_homologada']
-            row_cells[2].text = str(item['creditos_otorgados'])
-            row_cells[3].text = item['razon_homologacion']
+            row_cells[0].text = f"{item.get('materia_destino', 'N/A')} ({item.get('codigo_destino', 'N/A')})"
+            row_cells[1].text = item.get('materia_origen_homologada', 'N/A')
+            row_cells[2].text = str(item.get('creditos_otorgados', 0))
+            row_cells[3].text = item.get('razon_homologacion', '')
     else:
         document.add_paragraph('Ninguna asignatura pudo ser homologada.')
+
     document.add_paragraph().add_run().add_break()
     document.add_heading('Asignaturas No Homologadas (No Aplica)', 1)
 
     if no_aplica:
         for item in no_aplica:
             p = document.add_paragraph()
-            p.add_run(f"• {item['materia_destino']} ({item['codigo_destino']}): ").bold = True
-            p.add_run(f"{item['razon_homologacion']}")
-    else:
-        document.add_paragraph('Todas las asignaturas pudieron ser homologadas o la lista de destino era vacía.')
+            p.add_run(f"• {item.get('materia_destino', 'N/A')}: ").bold = True
+            p.add_run(f"{item.get('razon_homologacion', 'Sin razón especificada')}")
 
     f = io.BytesIO()
     document.save(f)

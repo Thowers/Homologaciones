@@ -162,7 +162,19 @@ def procesar_homologacion_view(request):
                 client = genai.Client(api_key=settings.GEMINI_API_KEY) 
 
                 schema_homologacion = {
-                    
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "materia_destino": {"type": "string"},
+                            "codigo_destino": {"type": "string"},
+                            "materia_origen_homologada": {"type": "string"},
+                            "creditos_otorgados": {"type": "integer"},
+                            "razon_homologacion": {"type": "string"},
+                            "estado": {"type": "string"}
+                        },
+                        "required": ["materia_destino", "estado"]
+                    }
                 }
 
                 response = client.models.generate_content(
@@ -174,27 +186,24 @@ def procesar_homologacion_view(request):
                 homologaciones_json = json.loads(response.text)
                 
                 carrera_destino = get_object_or_404(Carrera, pk=carrera_destino_id)
-                resultado_str = json.dumps(homologaciones_json) 
                 
-                temp_historico = HistoricoHomologacion(
-                    resultado_json=resultado_str, 
+                historico_guardado = HistoricoHomologacion.objects.create(
                     carrera_destino=carrera_destino, 
-                    nombre_estudiante=None, 
-                    documento_identidad=None,
+                    nombre_estudiante=None, # Podrías extraerlo de la IA si quisieras
+                    documento_identidad=None, 
+                    archivo_pdf_nombre=archivo_notas.name
                 )
                 
-                docx_content = generar_docx_homologacion(temp_historico)
+                docx_content = generar_docx_homologacion(historico_guardado, homologaciones_json)
                 
                 historico_guardado = HistoricoHomologacion.objects.create(
                     carrera_destino=carrera_destino, 
                     nombre_estudiante=None, 
                     documento_identidad=None, 
-                    resultado_json=resultado_str,
                     archivo_pdf_nombre=archivo_notas.name
                 )
                 
-                filename = f"Homologacion_{carrera_destino.nombre.replace(' ', '_')}_{timezone.now().strftime('%Y%m%d%H%M%S')}.docx"
-                
+                filename = f"Homologacion_{carrera_destino.nombre}.docx"
                 historico_guardado.archivo_docx.save(filename, ContentFile(docx_content.getvalue()))
                 
                 return JsonResponse({
@@ -216,14 +225,6 @@ def procesar_homologacion_view(request):
         else:
             return JsonResponse({'status': 'error', 'message': dict(form.errors.items())}, status=400)
     
-    form = NotasUploadForm()
-    carreras = Carrera.objects.all()
-    return render(request, 'homologador/upload.html', {'form': form, 'carreras': carreras})
-    
-    form = NotasUploadForm()
-    carreras = Carrera.objects.all()
-    return render(request, 'homologador/upload.html', {'form': form, 'carreras': carreras})
-        
     form = NotasUploadForm()
     carreras = Carrera.objects.all()
     return render(request, 'homologador/upload.html', {'form': form, 'carreras': carreras})
